@@ -1,3 +1,4 @@
 pyserial
 multitimer
-moonraker-api 
+moonraker-api
+requests
