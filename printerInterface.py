@@ -1,15 +1,10 @@
-from asyncio.tasks import sleep
-import threading
-import errno
-import select
-import socket
 import json
 import requests
 from requests.exceptions import ConnectionError
-import atexit
-import time
-import asyncio
+import logging
 
+
+log = logging.getLogger(f'dwin.{__name__}')
 
 class xyze_t:
     x = 0.0
@@ -107,7 +102,6 @@ class MoonrakerSocket:
 
 
 class PrinterData:
-    event_loop = None
     HAS_HOTEND = True
     HOTENDS = 1
     HAS_HEATED_BED = True
@@ -172,14 +166,10 @@ class PrinterData:
     def __init__(self, API_Key, URL='127.0.0.1'):
         self.op = MoonrakerSocket(URL, 80, API_Key)
         self.status = None
-        print(self.op.base_address)
+        log.debug(f"moonraker api: {self.op.base_address}")
 
         klippy_data = self.getREST("/printer/objects/query?configfile=config&toolhead=homed_axes")
         self.klippy_callback(klippy_data)
-
-        self.event_loop = asyncio.new_event_loop()
-        threading.Thread(target=self.event_loop.run_forever,
-                         daemon=True).start()
 
     # ------------- Klipper Function ----------
 
@@ -207,13 +197,20 @@ class PrinterData:
                     if 'z' in status['toolhead']['homed_axes']:
                         self.current_position.home_z = True
 
-            if 'configfile' in status:
-                if 'config' in status['configfile']:
-                    if 'bltouch' in status['configfile']['config']:
-                        if 'z_offset' in status['configfile']['config']['bltouch']:
-                            if status['configfile']['config']['bltouch']['z_offset']:
-                                self.BABY_Z_VAR = float(
-                                    status['configfile']['config']['bltouch']['z_offset'])
+            config = status.get('configfile', {}).get('config')
+            if not config:
+                return
+
+            bltouch = config.get('bltouch')
+            if bltouch:
+                z_offset = bltouch.get('z_offset')
+                if z_offset:
+                    self.BABY_Z_VAR = float(z_offset)
+                    self.HAS_BED_PROBE = True
+
+            fan = config.get('fan')
+            if fan:
+                self.HAS_FAN = 'pin' in fan
 
             # print(status)
 
@@ -221,13 +218,13 @@ class PrinterData:
         return self.current_position.home_x and self.current_position.home_y and self.current_position.home_z
 
     def offset_z(self, new_offset):
-        #		print('new z offset:', new_offset)
+        log.debug(f'new z offset: {new_offset}')
         self.BABY_Z_VAR = new_offset
         self.sendGCode('ACCEPT')
 
     def add_mm(self, axs, new_offset):
         gc = 'TESTZ Z={}'.format(new_offset)
-        print(axs, gc)
+        log.debug(f"axs: {axs}, gc: {gc}")
         self.sendGCode(gc)
 
     def probe_calibrate(self):
@@ -243,27 +240,21 @@ class PrinterData:
         try:
             return json.loads(d)
         except JSONDecodeError:
-            print('Decoding JSON has failed')
+            log.error('Decoding JSON has failed')
         return None
 
-    async def _postREST(self, path, json):
-        # it doesn't make sense... no await here
-        # and self.op.s.post is standard function
-        self.op.s.post(self.op.base_address + path, json=json)
-
     def postREST(self, path, json):
-        print(f"postREST({path}, {json})")
-        self.event_loop.call_soon_threadsafe(
-            asyncio.create_task, self._postREST(path, json))
+        result = self.op.s.post(self.op.base_address + path, json=json)
+        log.debug(f"postREST({path}, {json}) = {result}")
 
     def init_Webservices(self):
         try:
             requests.get(self.op.base_address)
         except ConnectionError:
-            print('Web site does not exist')
+            log.error('Web site does not exist')
             return
         else:
-            print('Web site exists')
+            log.info('Web site exists')
         if self.getREST('/api/printer') is None:
             return
         self.update_variable()
@@ -370,15 +361,15 @@ class PrinterData:
                       json={'filename': self.file_name})
 
     def cancel_job(self):  # fixed
-        print('Canceling job:')
+        log.info('Canceling job:')
         self.postREST('/printer/print/cancel', json=None)
 
     def pause_job(self):  # fixed
-        print('Pausing job:')
+        log.info('Pausing job:')
         self.postREST('/printer/print/pause', json=None)
 
     def resume_job(self):  # fixed
-        print('Resuming job:')
+        log.info('Resuming job:')
         self.postREST('printer/print/resume', json=None)
 
     def set_feedrate(self, fr):
@@ -418,7 +409,7 @@ class PrinterData:
                 self.material_preset[1].bed_temp, self.material_preset[1].hotend_temp)
 
     def save_settings(self):
-        print('saving settings')
+        log.debug('TODO: saving settings')
         return True
 
     def setExtTemp(self, target, toolnum=0):
