@@ -1722,7 +1722,7 @@ class DWIN_LCD:
                                 self.LBLX + 27, line)  # "Jerk"
 
     def draw_steps_per_mm(self, line):
-        self.lcd.Frame_AreaCopy(1, 1, 151, 101, 161,
+        self.lcd.Frame_AreaCopy(1, 1, 151, 119, 161,
                                 self.LBLX, line)  # "Steps-per-mm"
 
     # Display an SD item
