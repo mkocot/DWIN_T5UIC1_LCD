@@ -96,87 +96,6 @@ class material_preset_t:
         self.fan_speed = fan_speed
 
 
-class KlippySocket:
-    def __init__(self, uds_filename, callback=None):
-        self.webhook_socket_create(uds_filename)
-        self.lock = threading.Lock()
-        self.poll = select.poll()
-        self.stop_threads = False
-        self.poll.register(self.webhook_socket, select.POLLIN | select.POLLHUP)
-        self.socket_data = ""
-        self.t = threading.Thread(target=self.polling)
-        self.callback = callback
-        self.lines = []
-        self.t.start()
-        atexit.register(self.klippyExit)
-
-    def klippyExit(self):
-        print("Shuting down Klippy Socket")
-        self.stop_threads = True
-        self.t.join()
-
-    def webhook_socket_create(self, uds_filename):
-        self.webhook_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.webhook_socket.setblocking(0)
-        print("Waiting for connect to %s\n" % (uds_filename,))
-        while 1:
-            try:
-                self.webhook_socket.connect(uds_filename)
-            except socket.error as e:
-                if e.errno == errno.ECONNREFUSED:
-                    time.sleep(0.1)
-                    continue
-                print(
-                    "Unable to connect socket %s [%d,%s]\n" % (
-                        uds_filename, e.errno,
-                        errno.errorcode[e.errno]
-                    ))
-                exit(-1)
-            break
-        print("Connection.\n")
-
-    def process_socket(self):
-        data = self.webhook_socket.recv(4096).decode()
-        if not data:
-            print("Socket closed\n")
-            exit(0)
-        parts = data.split('\x03')
-        parts[0] = self.socket_data + parts[0]
-        self.socket_data = parts.pop()
-        for line in parts:
-            if self.callback:
-                self.callback(line)
-
-    def queue_line(self, line):
-        with self.lock:
-            self.lines.append(line)
-
-    def send_line(self):
-        if len(self.lines) == 0:
-            return
-        line = self.lines.pop(0).strip()
-        if not line or line.startswith('#'):
-            return
-        try:
-            m = json.loads(line)
-        except JSONDecodeError:
-            print("ERROR: Unable to parse line\n")
-            return
-        cm = json.dumps(m, separators=(',', ':'))
-        wdm = '{}\x03'.format(cm)
-        self.webhook_socket.send(wdm.encode())
-
-    def polling(self):
-        while True:
-            if self.stop_threads:
-                break
-            res = self.poll.poll(1000.)
-            for fd, event in res:
-                self.process_socket()
-            with self.lock:
-                self.send_line()
-
-
 class MoonrakerSocket:
     def __init__(self, address, port, api_key):
         self.s = requests.Session()
@@ -254,26 +173,9 @@ class PrinterData:
         self.op = MoonrakerSocket(URL, 80, API_Key)
         self.status = None
         print(self.op.base_address)
-        self.ks = KlippySocket(
-            '/tmp/klippy_uds', callback=self.klippy_callback)
-        subscribe = {
-            "id": 4001,
-            "method": "objects/subscribe",
-            "params": {
-                "objects": {
-                    "toolhead": [
-                        "position"
-                    ]
-                },
-                "response_template": {}
-            }
-        }
-        self.klippy_z_offset = '{"id": 4002, "method": "objects/query", "params": {"objects": {"configfile": ["config"]}}}'
-        self.klippy_home = '{"id": 4003, "method": "objects/query", "params": {"objects": {"toolhead": ["homed_axes"]}}}'
 
-        self.ks.queue_line(json.dumps(subscribe))
-        self.ks.queue_line(self.klippy_z_offset)
-        self.ks.queue_line(self.klippy_home)
+        klippy_data = self.getREST("/printer/objects/query?configfile=config&toolhead=homed_axes")
+        self.klippy_callback(klippy_data)
 
         self.event_loop = asyncio.new_event_loop()
         threading.Thread(target=self.event_loop.run_forever,
@@ -281,8 +183,7 @@ class PrinterData:
 
     # ------------- Klipper Function ----------
 
-    def klippy_callback(self, line):
-        klippyData = json.loads(line)
+    def klippy_callback(self, klippyData):
         status = None
         if 'result' in klippyData:
             if 'status' in klippyData['result']:
@@ -317,11 +218,7 @@ class PrinterData:
             # print(status)
 
     def ishomed(self):
-        if self.current_position.home_x and self.current_position.home_y and self.current_position.home_z:
-            return True
-        else:
-            self.ks.queue_line(self.klippy_home)
-            return False
+        return self.current_position.home_x and self.current_position.home_y and self.current_position.home_z
 
     def offset_z(self, new_offset):
         #		print('new z offset:', new_offset)
@@ -350,9 +247,12 @@ class PrinterData:
         return None
 
     async def _postREST(self, path, json):
+        # it doesn't make sense... no await here
+        # and self.op.s.post is standard function
         self.op.s.post(self.op.base_address + path, json=json)
 
     def postREST(self, path, json):
+        print(f"postREST({path}, {json})")
         self.event_loop.call_soon_threadsafe(
             asyncio.create_task, self._postREST(path, json))
 
@@ -394,7 +294,7 @@ class PrinterData:
         return names
 
     def update_variable(self):
-        query = '/printer/objects/query?extruder&heater_bed&gcode_move&fan'
+        query = '/printer/objects/query?extruder&heater_bed&gcode_move&fan&toolhead=position,homed_axes&virtual_sdcard&print_stats'
         data = self.getREST(query)['result']['status']
         gcm = data['gcode_move']
         z_offset = gcm['homing_origin'][2]  # z offset
@@ -434,12 +334,12 @@ class PrinterData:
         except:
             # missing key, shouldn't happen, fixes misses on conditionals ¯\_(ツ)_/¯
             pass
-        self.job_Info = self.getREST(
-            '/printer/objects/query?virtual_sdcard&print_stats')['result']['status']
+        self.job_Info = {"virtual_sdcard": data["virtual_sdcard"], "print_stats": data["print_stats"]}
         if self.job_Info:
             self.file_name = self.job_Info['print_stats']['filename']
             self.status = self.job_Info['print_stats']['state']
             self.HMI_flag.print_finish = self.getPercent() == 100.0
+        self.klippy_callback({"result": {"status": data}})
         return Update
 
     def printingIsPaused(self):
