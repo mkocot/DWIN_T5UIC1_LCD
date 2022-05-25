@@ -1,0 +1,30 @@
+# this is configuration working on Zero 2, your milleage may vary
+
+version: '3.4'
+
+services:
+  dwin:
+    #image: TODO
+    build:
+      dockerfile: ./docker/Dockerfile
+      context: .
+    # Use .env file to adjust following values (or edit directly here)
+    # see docker/run.py for details
+    environment:
+      - LOGLEVEL=${LOGLEVEL-INFO}
+      - DWIN_SERIAL=${DWIN_SERIAL-/dev/ttyS0}
+      - DWIN_ENCODER=${DWIN_ENCODER-25,24}
+      - DWIN_BUTTON=${DWIN_BUTTON-23}
+      - MOONRAKER_API_KEY=${MOONRAKER_API_KEY-}
+      - MOONRAKER_HOST=${MOONRAKER_HOST-127.0.0.1}
+      - MOONRAKER_PORT=${MOONRAKER_PORT-7125}
+    container_name: dwin
+    privileged: false
+    restart: unless-stopped
+    volumes:
+      - /sys:/sys
+      - /sys/devices/platform/soc/3f200000.gpio/gpiochip0:/sys/devices/platform/soc/3f200000.gpio/gpiochip0
+    devices:
+      # ensure container will have sufficient permission to read and write
+      - ${DWIN_SERIAL-/dev/ttyS0} # Serial device where screen is connected
+      - /dev/gpiomem

@@ -1,0 +1,10 @@
+# Exclude all files by default
+/*
+# include files required by project
+!/DWIN_Screen.py
+!/printerInterface.py
+!/dwinlcd.py
+!/encoder.py
+!/requirements.txt
+!/test.py
+!/docker/run.py
