@@ -1,9 +1,9 @@
 import time
-import multitimer
 import atexit
+import threading
 
 from encoder import Encoder
-from RPi import GPIO
+from gpiozero import Button
 
 from printerInterface import PrinterData
 from DWIN_Screen import T5UIC1_LCD
@@ -25,6 +25,15 @@ def _MIN(lhs, rhs):
         return lhs
     else:
         return rhs
+
+
+class RepeatableTimer(threading.Timer):
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
+
+    def stop(self):
+        self.cancel()
 
 
 class select_t:
@@ -302,12 +311,10 @@ class DWIN_LCD:
     # Passing parameters: serial port number
     # DWIN screen uses serial port 1 to send
     def __init__(self, USARTx, encoder_pins, button_pin, octoPrint_API_Key):
-        GPIO.setmode(GPIO.BCM)
         self.encoder = Encoder(encoder_pins[0], encoder_pins[1])
         self.button_pin = button_pin
-        GPIO.setup(self.button_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(self.button_pin, GPIO.BOTH,
-                              callback=self.encoder_has_data)
+        self.button = Button(button_pin)
+        self.button.when_pressed = self.encoder_has_data
         self.encoder.callback = self.encoder_has_data
         self.EncodeLast = 0
         self.EncodeMS = current_milli_time() + self.ENCODER_WAIT
@@ -317,7 +324,7 @@ class DWIN_LCD:
         self.lcd = T5UIC1_LCD(USARTx)
         self.checkkey = self.MainMenu
         self.pd = PrinterData(octoPrint_API_Key)
-        self.timer = multitimer.MultiTimer(
+        self.timer = RepeatableTimer(
             interval=2, function=self.EachMomentUpdate)
         self.HMI_ShowBoot()
         print("Boot looks good")
@@ -336,7 +343,7 @@ class DWIN_LCD:
         self.lcd.Frame_SetDir(1)
         self.lcd.UpdateLCD()
         self.timer.stop()
-        GPIO.remove_event_detect(self.button_pin)
+        self.button.close()
 
     def MBASE(self, L):
         return 49 + self.MLINE * L
@@ -2487,7 +2494,7 @@ class DWIN_LCD:
         elif self.encoder.value > self.EncodeLast:
             self.EncodeLast = self.encoder.value
             return self.ENCODER_DIFF_CCW
-        elif not GPIO.input(self.button_pin):
+        elif self.button.is_pressed:
             if self.EncodeEnter > current_milli_time():  # prevent double clicks
                 return self.ENCODER_DIFF_NO
             self.EncodeEnter = current_milli_time() + self.ENCODER_WAIT_ENTER

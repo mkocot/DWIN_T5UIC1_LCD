@@ -1,4 +1,3 @@
 pyserial
-multitimer
-moonraker-api
 requests
+gpiozero
