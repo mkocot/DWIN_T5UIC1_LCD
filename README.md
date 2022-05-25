@@ -29,13 +29,19 @@ https://github.com/arksine/moonraker
 
 ### Library requirements 
 
-  Thanks to [wolfstlkr](https://www.reddit.com/r/ender3v2/comments/mdtjvk/octoprint_klipper_v2_lcd/gspae7y)
-
-  `sudo apt-get install python3-pip python3-gpiozero python3-serial git`
-
-  `sudo pip3 install multitimer`
+  `sudo apt-get install python3-pip git`
 
   `git clone https://github.com/bustedlogic/DWIN_T5UIC1_LCD.git`
+
+  `cd DWIN_T5UIC1_LCD && pip3 install -r requirements.txt`
+
+  If you are not using Raspberry Pi OS then you might need to install
+  one of the following libraries (using `pip3 install XXX`):
+
+  * RPi.GPIO (or `sudo apt-get install python3-rpi.gpio`)
+  * lgpio
+  * rpio
+  * pigpio
 
 
 ### Wire the display 
@@ -124,7 +130,13 @@ Run with `python3 ./run.py`
    
    `sudo reboot`
    
-   
+  
+# Run with docker-compose:
+
+  	Note: create .env file to change default values used
+	in docker-compose.yml
+
+  `sudo docker-compose up`
 
 # Status:
 
