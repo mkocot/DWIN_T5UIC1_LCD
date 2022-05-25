@@ -163,8 +163,8 @@ class PrinterData:
     SHORT_BUILD_VERSION = "1.00"
     CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-    def __init__(self, API_Key, URL='127.0.0.1'):
-        self.op = MoonrakerSocket(URL, 80, API_Key)
+    def __init__(self, API_Key, URL='127.0.0.1', port=80):
+        self.op = MoonrakerSocket(URL, port, API_Key)
         self.status = None
         log.debug(f"moonraker api: {self.op.base_address}")
 
@@ -239,7 +239,7 @@ class PrinterData:
         d = r.content.decode('utf-8')
         try:
             return json.loads(d)
-        except JSONDecodeError:
+        except json.JSONDecodeError:
             log.error('Decoding JSON has failed')
         return None
 
