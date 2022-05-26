@@ -164,5 +164,5 @@ Run with `python3 ./run.py`
     * Shows printer info.
 
 ## Notworking:
-    * Save / Loding Preheat setting, hardcode on start can be changed in menu but will not retane on restart.
+    * Save / Loding Preheat setting, hardcode on start can be changed in menu but will not retain on restart.
     * The Control: Motion Menu
